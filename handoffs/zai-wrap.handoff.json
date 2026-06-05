@@ -1,0 +1,59 @@
+{
+  "schema": "git-handoff/v3.2-local",
+  "generated_at": "2026-06-05T00:00:00Z",
+  "slug": "vinnygilberti/zai-wrap",
+  "identity": {
+    "name": "zai-wrap",
+    "owner": "vinnygilberti",
+    "type": "local-grok-skill",
+    "install_path": "~/.grok/skills/zai-wrap",
+    "version": "2.0.0",
+    "primary_language": "Python",
+    "platform": "macOS"
+  },
+  "purpose": "Z.AI/GLM prompt wrappers plus build-watch localhost dashboard: Grok session bridge, terminal mirror, git/previews, TTS, agent event stream.",
+  "consumption_order": [
+    "zai-wrap.AGENT.md",
+    "zai-wrap.REBUILD.md",
+    "zai-wrap.EXPLAIN.md",
+    "zai-wrap.HANDOFF.md",
+    "zai-wrap.handoff.json"
+  ],
+  "entrypoints": {
+    "skill": "~/.grok/skills/zai-wrap/SKILL.md",
+    "canvas": "http://127.0.0.1:8790/",
+    "cli_build_watch": "build-watch",
+    "cli_zai_wrap": "zai-wrap",
+    "python_module": "python3 -m bw serve|check|state|event",
+    "smoke_tests": "scripts/test_api.py"
+  },
+  "services_map": {
+    "github": "https://github.com/DXv-3/zai-wrap",
+    "gitingest": "https://gitingest.com/DXv-3/zai-wrap",
+    "gitreverse": "https://gitreverse.com/DXv-3/zai-wrap",
+    "local_server": "http://127.0.0.1:8790",
+    "grok_sessions": "~/.grok/sessions",
+    "grok_terminals": "~/.grok/projects",
+    "grok_active_sessions": "~/.grok/active_sessions.json"
+  },
+  "ecosystem_transforms": {
+    "gitingest": "https://gitingest.com/DXv-3/zai-wrap",
+    "gitreverse": "https://gitreverse.com/DXv-3/zai-wrap",
+    "gittoskill": "Generate skill ZIP from any repo",
+    "mcptoskill": "https://mcptoskill.com",
+    "gitsimilar": "Discovery for voice-clone / agent-ui parts"
+  },
+  "related_references": [
+    "references/VOICE_CLONING.md",
+    "references/GITHUB_MORPH_LIST_B.md"
+  ],
+  "download": {
+    "pack_script": "scripts/pack_handoff.sh",
+    "output_tarball": "zai-wrap-handoff-2.0.0.tar.gz",
+    "includes": ["handoffs/", "SKILL.md", "prompts/", "references/", "scripts/", "static/", "excludes_pycache": true]
+  },
+  "verification": {
+    "check": "build-watch check → ok true, version 2.0.0",
+    "tests": "python3 scripts/test_api.py → 14 passed"
+  }
+}

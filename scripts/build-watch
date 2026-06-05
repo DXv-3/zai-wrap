@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# build-watch — live terminal/git/events dashboard
+set -euo pipefail
+
+_zai_resolve_script() {
+  local src="$1"
+  while [[ -L "$src" ]]; do
+    local d
+    d="$(cd "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" != /* ]] && src="${d}/${src}"
+  done
+  cd "$(dirname "$src")" && pwd
+}
+SCRIPT_DIR="$(_zai_resolve_script "${BASH_SOURCE[0]}")"
+ZAI_WRAP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+PY="${SCRIPT_DIR}/build_watch.py"
+BW_MODULE="bw"
+CONNECT_PY="${SCRIPT_DIR}/bw_connect.py"
+PID_FILE=""
+SERVER_LOG=""
+
+resolve_pid_file() {
+  PID_FILE="$(zai_watch_dir)/server.pid"
+  SERVER_LOG="$(zai_watch_dir)/server.log"
+}
+
+usage() {
+  cat <<EOF
+build-watch — canvas UI: live preview + build stream (Lovable-style)
+
+  build-watch on          Init + start server + open browser
+  build-watch serve       Start server (foreground)
+  build-watch status      Project, URL, PID
+  build-watch event "msg" [--kind edit] [--files a,b]
+  build-watch connect     Link to active Grok Build session (updates.jsonl)
+  build-watch grok        Show Grok bridge status
+  build-watch off         Stop background server
+  build-watch check       Preflight (deps, files, port)
+  build-watch help
+
+Dashboard default: http://127.0.0.1:$(zai_port)
+EOF
+}
+
+cmd_check() {
+  export BUILD_WATCH_PROJECT="${BUILD_WATCH_PROJECT:-$(zai_project_cwd)}"
+  (cd "$SCRIPT_DIR" && python3 -m "$BW_MODULE" check)
+}
+
+cmd_on() {
+  export BUILD_WATCH_PROJECT="${BUILD_WATCH_PROJECT:-$(zai_project_cwd)}"
+  zai-wrap init 2>/dev/null || "${SCRIPT_DIR}/zai-wrap" init
+  resolve_pid_file
+  zai_stale_pid_cleanup "$PID_FILE"
+
+  if ! (cd "$SCRIPT_DIR" && python3 -m "$BW_MODULE" check) >/dev/null 2>&1; then
+    echo "Preflight failed — run: build-watch check" >&2
+    (cd "$SCRIPT_DIR" && python3 -m "$BW_MODULE" check) >&2 || true
+    exit 1
+  fi
+
+  local listener
+  listener="$(zai_port_listener_pid || true)"
+  if [[ -n "$listener" ]] && [[ -f "$PID_FILE" ]] && [[ "$(cat "$PID_FILE")" == "$listener" ]]; then
+    echo "Already running (pid $listener)"
+  elif [[ -n "$listener" ]]; then
+    echo "Port $(zai_port) in use by pid $listener (stale server.pid?)" >&2
+    echo "Run: build-watch off   or kill $listener" >&2
+    exit 1
+  else
+    mkdir -p "$(zai_watch_dir)"
+    nohup env BUILD_WATCH_PROJECT="$(zai_project_cwd)" sh -c "cd '${SCRIPT_DIR}' && exec python3 -m ${BW_MODULE} serve" >>"$SERVER_LOG" 2>&1 &
+    echo $! >"$PID_FILE"
+    sleep 0.6
+    if ! kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+      echo "Server failed to start. Last log lines:" >&2
+      tail -20 "$SERVER_LOG" >&2 || true
+      rm -f "$PID_FILE"
+      exit 1
+    fi
+    echo "Started pid $(cat "$PID_FILE")"
+  fi
+  local url
+  url="$(zai_watch_url)"
+  echo "Dashboard: $url"
+  if command -v open >/dev/null 2>&1; then
+    open "$url"
+  fi
+}
+
+cmd_serve() {
+  export BUILD_WATCH_PROJECT="${BUILD_WATCH_PROJECT:-$(zai_project_cwd)}"
+  cd "$SCRIPT_DIR" && exec python3 -m "$BW_MODULE" serve
+}
+
+cmd_status() {
+  resolve_pid_file
+  echo "project:  $(zai_project_cwd)"
+  echo "watch:    $(zai_watch_dir)"
+  echo "events:   $(zai_events_file)"
+  echo "url:      $(zai_watch_url)"
+  echo "terminals: $(find "${HOME}/.grok/projects" -path '*/terminals/*.txt' 2>/dev/null | wc -l | tr -d ' ') files under ~/.grok/projects"
+  if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    echo "server:   running pid $(cat "$PID_FILE")"
+  else
+    echo "server:   stopped"
+  fi
+}
+
+cmd_event() {
+  python3 "$PY" event "$@"
+}
+
+cmd_connect() {
+  export BUILD_WATCH_PROJECT="${BUILD_WATCH_PROJECT:-$(zai_project_cwd)}"
+  resolve_pid_file
+  local sid="${1:-}"
+  local wd
+  wd="$(zai_watch_dir)"
+  if [[ -z "$sid" ]] && [[ -f "${wd}/grok_session.json" ]]; then
+    sid="$(zai_python -c 'import json,sys; from pathlib import Path
+p=Path(sys.argv[1])/"grok_session.json"
+print(json.loads(p.read_text(encoding="utf-8")).get("session_id","") if p.is_file() else "")' "$wd" 2>/dev/null)"
+  fi
+  if [[ -z "$sid" ]] && [[ -f "${HOME}/.grok/active_sessions.json" ]]; then
+    sid="$(zai_python -c 'import json,sys; from pathlib import Path
+p=Path(sys.argv[1])
+s=sorted(json.loads(p.read_text(encoding="utf-8")), key=lambda x:x.get("opened_at",""), reverse=True)
+print(s[0].get("session_id","") if s else "")' "${HOME}/.grok/active_sessions.json" 2>/dev/null)"
+  fi
+  if [[ -z "$sid" ]]; then
+    echo "No Grok session found. Pass: build-watch connect <session_id>" >&2
+    exit 1
+  fi
+  zai_python "$CONNECT_PY" "$wd" "$sid"
+  echo "Canvas will stream Grok Build at $(zai_watch_url)"
+}
+
+cmd_grok() {
+  python3 -c "
+import importlib.util, json
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('gb', '${SCRIPT_DIR}/grok_bridge.py')
+gb = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gb)
+print(json.dumps(gb.grok_status(Path('$(zai_watch_dir)')), indent=2))
+"
+}
+
+cmd_off() {
+  resolve_pid_file
+  local stopped=0
+  if [[ -f "$PID_FILE" ]]; then
+    local pid
+    pid="$(cat "$PID_FILE")"
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      echo "Stopped $pid"
+      stopped=1
+    fi
+    rm -f "$PID_FILE"
+  fi
+  local listener
+  listener="$(zai_port_listener_pid || true)"
+  if [[ -n "$listener" ]]; then
+    kill "$listener" 2>/dev/null || true
+    echo "Stopped listener pid $listener on port $(zai_port)"
+    stopped=1
+  fi
+  if [[ "$stopped" -eq 0 ]]; then
+    echo "Not running"
+  fi
+}
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+  case "$cmd" in
+    on) cmd_on ;;
+    serve) cmd_serve ;;
+    status) cmd_status ;;
+    event) cmd_event "$@" ;;
+    connect) shift || true; cmd_connect "$@" ;;
+    grok) cmd_grok ;;
+    off) cmd_off ;;
+    check) cmd_check ;;
+    help|-h|--help) usage ;;
+    *) echo "Unknown: $cmd" >&2; usage; exit 1 ;;
+  esac
+}
+
+main "$@"

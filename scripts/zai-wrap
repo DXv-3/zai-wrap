@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# zai-wrap — compose Z.AI-ready prompts with visibility contract
+set -euo pipefail
+
+_zai_resolve_script() {
+  local src="$1"
+  while [[ -L "$src" ]]; do
+    local d
+    d="$(cd "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" != /* ]] && src="${d}/${src}"
+  done
+  cd "$(dirname "$src")" && pwd
+}
+SCRIPT_DIR="$(_zai_resolve_script "${BASH_SOURCE[0]}")"
+ZAI_WRAP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+usage() {
+  cat <<EOF
+zai-wrap — Z.AI wrapper prompts + build-watch visibility
+
+  zai-wrap init                     Create .build-watch/ in project
+  zai-wrap system                   Print system preamble
+  zai-wrap visibility               Print visibility contract
+  zai-wrap compose "task"           Full session prompt (paste into Cline/Claude Code)
+  zai-wrap compose -f task.md       Compose from file
+  zai-wrap help
+
+Options for compose:
+  --stack "Python FastAPI"          Override stack line
+  --req "1. ..."                    Extra requirements (repeatable)
+
+Environment: BUILD_WATCH_PORT, BUILD_WATCH_DIR, BUILD_WATCH_PROJECT
+EOF
+}
+
+cmd_init() {
+  local dir
+  dir="$(zai_watch_dir)"
+  mkdir -p "$dir"
+  touch "${dir}/events.jsonl"
+  cat > "${dir}/README.txt" <<README
+# build-watch (zai-wrap)
+
+Dashboard: $(zai_watch_url)
+Events:    ${dir}/events.jsonl
+
+  build-watch on
+  build-watch event "your step" --kind edit --files src/foo.py
+README
+  echo "Initialized ${dir}"
+  echo "Dashboard: $(zai_watch_url)"
+}
+
+cmd_system() {
+  zai_render_template "${ZAI_WRAP_ROOT}/prompts/system.md"
+}
+
+cmd_visibility() {
+  zai_render_template "${ZAI_WRAP_ROOT}/prompts/visibility.md"
+}
+
+cmd_compose() {
+  local task=""
+  local stack="Infer from repo; ask if unclear"
+  local -a reqs=()
+  local -a success=("Implementation matches requirements" "Tests or lint pass if applicable" "Visibility events emitted for major steps")
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --stack) stack="$2"; shift 2 ;;
+      --req) reqs+=("$2"); shift 2 ;;
+      -f|--file)
+        task="$(cat "$2")"
+        shift 2
+        ;;
+      -h|--help) usage; exit 0 ;;
+      *)
+        if [[ -z "$task" ]]; then
+          task="$1"
+        else
+          task="$task $1"
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$task" ]]; then
+    echo "Error: provide a task string or -f file" >&2
+    exit 1
+  fi
+
+  cmd_init >/dev/null 2>&1 || true
+
+  local req_block="1. Complete the task in {{PROJECT_ROOT}}
+2. Follow the visibility contract"
+  local i=3
+  if ((${#reqs[@]} > 0)); then
+    for r in "${reqs[@]}"; do
+      req_block="${req_block}
+${i}. ${r}"
+      i=$((i + 1))
+    done
+  fi
+
+  local sc_block=""
+  local n=1
+  for s in "${success[@]}"; do
+    sc_block="${sc_block}- [ ] ${s}
+"
+    n=$((n + 1))
+  done
+
+  local body
+  body="$(zai_render_template "${ZAI_WRAP_ROOT}/prompts/build-session.md")"
+  body="${body//\{\{OBJECTIVE\}\}/$(echo "$task" | head -1)}"
+  body="${body//\{\{TASK\}\}/$task}"
+  body="${body//\{\{STACK\}\}/$stack}"
+  body="${body//\{\{REQUIREMENTS\}\}/$req_block}"
+  body="${body//\{\{SUCCESS_CRITERIA\}\}/$sc_block}"
+
+  echo "---"
+  echo "# Z.AI session prompt (zai-wrap)"
+  echo ""
+  cmd_system
+  echo ""
+  cmd_visibility
+  echo ""
+  echo "$body"
+  echo ""
+  echo "---"
+  echo "Paste the block above into your Z.AI-backed coding tool. Keep $(zai_watch_url) open."
+}
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+  case "$cmd" in
+    init) cmd_init ;;
+    system) cmd_system ;;
+    visibility) cmd_visibility ;;
+    compose) cmd_compose "$@" ;;
+    help|-h|--help) usage ;;
+    *) echo "Unknown: $cmd" >&2; usage; exit 1 ;;
+  esac
+}
+
+main "$@"
