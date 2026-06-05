@@ -30,7 +30,6 @@ PREVIEW_PORTS: list[tuple[int, str]] = [
     (4173, "Vite preview"),
     (8080, "Dev server"),
     (8787, "Handoff API"),
-    (8790, "Build Watch"),
 ]
 
 ARTIFACT_GLOBS: list[str] = [

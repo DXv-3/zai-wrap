@@ -11,90 +11,106 @@
 <body>
   <header class="top">
     <div class="brand">Build <span>Watch</span></div>
-    <span class="status ok" id="livePill"><span class="dot"></span> Live</span>
-    <span class="status grok" id="grokPill" hidden>Grok</span>
     <p class="project" id="projectName" title="">Connecting…</p>
-    <div class="url-bar">
-      <input type="text" id="previewUrl" placeholder="Preview URL or path/to/file.html" spellcheck="false" />
-      <button type="button" id="btnPreviewGo">Open</button>
-      <button type="button" id="btnPreviewRefresh" title="Refresh preview (⌘R)">↻</button>
-    </div>
-    <button type="button" class="primary" id="btnConnect">Connect Grok</button>
+    <button type="button" class="ghost" id="btnHelp">How it works</button>
+    <button type="button" class="primary" id="btnConnect">Link Grok</button>
   </header>
 
-  <div class="layout">
-    <aside class="stream" aria-label="Build stream">
-      <h2>Build stream</h2>
-      <div class="stream-body" id="feedList">
-        <p class="empty">Grok edits and events show up here…</p>
+  <p class="status-line" id="statusLine">Loading…</p>
+
+  <div class="workspace">
+    <main class="preview-shell">
+      <div class="preview-bar">
+        <span class="preview-label">Your app preview</span>
+        <input type="text" id="previewUrl" placeholder="Shows here when Grok runs a dev server" spellcheck="false" />
+        <button type="button" id="btnPreviewGo">Open</button>
+        <button type="button" id="btnPreviewRefresh" title="Refresh">↻</button>
+        <button type="button" class="ghost panel-btn" id="btnActivity" aria-expanded="false">What Grok did</button>
+        <button type="button" class="ghost panel-btn" id="btnFiles" aria-expanded="false">Open a file</button>
       </div>
-    </aside>
 
-    <main class="canvas">
-      <nav class="canvas-tabs" role="tablist" aria-label="Canvas views">
-        <button type="button" class="tab active" data-mode="preview" role="tab" aria-selected="true">Preview</button>
-        <button type="button" class="tab" data-mode="code" role="tab" aria-selected="false">Code</button>
-        <button type="button" class="tab" data-mode="build" role="tab" aria-selected="false">Build</button>
-      </nav>
-
-      <div class="stage">
-        <div class="pane active" id="panePreview" role="tabpanel">
-          <div class="preview-loading" id="previewLoading" hidden>Loading preview…</div>
-          <iframe id="previewFrame" title="Live app preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
-          <div class="empty-state" id="previewEmpty">
-            <strong>Your app builds here</strong>
-            <p>Run a dev server in Grok, or open an HTML file from the stream or sidebar.</p>
-          </div>
-        </div>
-
-        <div class="pane" id="paneCode" role="tabpanel" hidden>
-          <div class="code-bar">
-            <span id="codePathLabel">No file open</span>
-            <button type="button" id="btnCodeToPreview">Show in preview</button>
-          </div>
-          <pre class="code-view" id="codeView">// Click a file in the build stream</pre>
-        </div>
-
-        <div class="pane" id="paneBuild" role="tabpanel" hidden>
-          <div class="build-bar">
-            <input type="text" id="buildPath" placeholder="path/to/file.html" spellcheck="false" />
-            <button type="button" id="btnBuildSave" title="Save (⌘S)">Save</button>
-            <button type="button" id="btnBuildReload">Reload</button>
-          </div>
-          <div class="build-split">
-            <textarea id="buildEditor" spellcheck="false" placeholder="Edit source…"></textarea>
-            <iframe id="buildFrame" title="Build preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
-          </div>
+      <div class="preview-stage">
+        <div class="preview-loading" id="previewLoading" hidden>Loading…</div>
+        <iframe id="previewFrame" title="Your app preview"></iframe>
+        <div class="guide" id="guide">
+          <h2>This window is only for watching your app</h2>
+          <p class="guide-lead">You still build in <strong>Grok Build</strong> (your normal terminal). This page mirrors the result.</p>
+          <ol class="steps">
+            <li id="step1"><span>1</span> Keep Grok Build open in another window — that’s where you chat and run commands.</li>
+            <li id="step2"><span>2</span> Click <strong>Link Grok</strong> (top right) so this page can follow that session.</li>
+            <li id="step3"><span>3</span> When Grok starts your app (<code>npm run dev</code>, etc.), the preview appears here automatically.</li>
+          </ol>
+          <p class="guide-note">Side panels are optional: <em>What Grok did</em> = live log of edits · <em>Open a file</em> = jump to HTML or docs.</p>
+          <button type="button" class="ghost" id="btnDismissGuide">Got it — hide this</button>
         </div>
       </div>
     </main>
 
-    <aside class="rail" aria-label="Artifacts">
-      <h2>Artifacts</h2>
-      <div class="rail-list" id="filesList">
-        <p class="empty">Previews from your project</p>
-      </div>
+    <aside class="panel" id="panelActivity" hidden>
+      <header>
+        <h2>What Grok did</h2>
+        <p>Live log from your Grok session. Click a filename to open it.</p>
+        <button type="button" class="close-panel" data-close="activity" aria-label="Close">×</button>
+      </header>
+      <div class="panel-body" id="feedList"></div>
+    </aside>
+
+    <aside class="panel" id="panelFiles" hidden>
+      <header>
+        <h2>Open a file</h2>
+        <p>HTML previews and project files Grok touched.</p>
+        <button type="button" class="close-panel" data-close="files" aria-label="Close">×</button>
+      </header>
+      <div class="panel-body" id="filesList"></div>
     </aside>
   </div>
 
-  <footer class="terminal" id="terminalDock">
+  <footer class="terminal collapsed" id="terminalDock">
     <div class="term-head">
-      <button type="button" class="term-toggle" id="btnTermToggle" aria-expanded="true">Terminal</button>
-      <button type="button" class="seg active" id="btnMirror">Mirror</button>
-      <button type="button" class="seg" id="btnShell">Shell</button>
-      <select id="termPick" aria-label="Terminal session"></select>
-      <label class="sync-label"><input type="checkbox" id="autoSync" checked /> Auto-sync</label>
+      <button type="button" class="term-toggle" id="btnTermToggle" aria-expanded="false">Show Grok terminal output</button>
+      <span class="term-hint">Optional — same text as your Grok Build window</span>
     </div>
     <div class="term-body" id="termBody">
-      <pre class="term-out" id="termOutput" aria-live="polite">Grok Build terminal mirrors here…</pre>
-      <div class="term-in">
-        <input type="text" id="termInput" placeholder="Shell input…" disabled autocomplete="off" />
-      </div>
+      <pre class="term-out" id="termOutput">Link Grok first, then expand this to read terminal output here.</pre>
     </div>
   </footer>
 
-  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog class="help-dialog" id="helpDialog">
+    <header>
+      <h2>What is Build Watch?</h2>
+      <button type="button" id="helpClose" aria-label="Close">×</button>
+    </header>
+    <div class="help-body">
+      <p><strong>Think of it like Lovable’s preview pane.</strong> Grok writes code in your terminal; this page shows the running app so you don’t stare at logs.</p>
+      <dl>
+        <dt>Link Grok</dt>
+        <dd>Connects to your active Grok Build session so we can see edits and terminal output.</dd>
+        <dt>Your app preview (center)</dt>
+        <dd>The thing you care about — your site or UI. Refreshes when Grok changes HTML or when a dev server is running.</dd>
+        <dt>What Grok did</dt>
+        <dd>A readable timeline: files edited, commands run. Click any file path.</dd>
+        <dt>Open a file</dt>
+        <dd>Shortcuts to HTML pages and docs in your project.</dd>
+        <dt>Terminal at the bottom</dt>
+        <dd>Optional mirror of Grok’s terminal. You don’t type here unless you expand it and switch modes — coding stays in Grok.</dd>
+      </dl>
+      <p class="help-cmd">Start from your project folder: <code>cd your-project && build-watch on</code></p>
+    </div>
+  </dialog>
 
+  <dialog class="file-dialog" id="fileDialog">
+    <header>
+      <span id="fileDialogTitle">File</span>
+      <button type="button" id="fileDialogClose" aria-label="Close">×</button>
+    </header>
+    <pre id="fileDialogBody"></pre>
+    <footer>
+      <button type="button" id="btnFilePreview">Show in preview</button>
+      <button type="button" class="primary" id="btnFileSave" hidden>Save changes</button>
+    </footer>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden></div>
   <script src="/assets/hub.js"></script>
 </body>
 </html>

@@ -83,23 +83,37 @@ def discover_previews(
     return out[:20]
 
 
+def _self_preview_urls() -> set[str]:
+    import os
+
+    port = int(os.environ.get("BUILD_WATCH_PORT", "8790"))
+    return {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+
+
 def pick_primary(previews: list[dict[str, Any]]) -> str | None:
     if not previews:
         return None
+    blocked = _self_preview_urls()
     for p in previews:
-        if p.get("type") == "server" and p.get("port") not in (8790,):
+        if p.get("type") == "server" and p.get("url") not in blocked:
             return p["url"]
-    for name in ("handoff-preview.html", "index.html"):
+    for name in ("handoff-preview.html", "index.html", "static/web/index.html"):
         for p in previews:
             if p.get("path") == name or p.get("label") == name:
                 return p["url"]
     for p in previews:
-        if p.get("type") == "html":
+        if p.get("type") == "html" and p.get("url") not in blocked:
             return p["url"]
     for p in previews:
+        url = p.get("url") or ""
+        if url in blocked or p.get("type") in ("markdown", "code", "file"):
+            continue
         if p.get("type") == "server":
+            return url
+    for p in previews:
+        if p.get("type") == "html":
             return p["url"]
-    return previews[0]["url"]
+    return None
 
 
 def list_artifacts(policy: PathPolicy) -> list[dict[str, Any]]:
