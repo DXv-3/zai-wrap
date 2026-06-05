@@ -17,7 +17,7 @@ class PathPolicy:
 
     def safe_project_file(self, rel: str, *, must_exist: bool = True) -> Path | None:
         rel = rel.lstrip("/").replace("\\", "/")
-        if not rel or ".." in rel.split("/"):
+        if not rel or "\x00" in rel or ".." in rel.split("/"):
             return None
         target = (self.project / rel).resolve()
         try:
@@ -34,7 +34,7 @@ class PathPolicy:
 
     def safe_new_file(self, rel: str) -> Path | None:
         rel = rel.lstrip("/").replace("\\", "/")
-        if not rel or ".." in rel.split("/"):
+        if not rel or "\x00" in rel or ".." in rel.split("/"):
             return None
         target = (self.project / rel).resolve()
         try:

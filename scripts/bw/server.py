@@ -56,10 +56,22 @@ class CanvasHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self._write(body)
 
-    def _bytes(self, data: bytes, content_type: str, code: int = 200) -> None:
+    def _bytes(
+        self,
+        data: bytes,
+        content_type: str,
+        code: int = 200,
+        *,
+        cache_control: str = "no-store",
+        extra_headers: dict[str, str] | None = None,
+    ) -> None:
         self.send_response(code)
         self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache_control)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
         self.end_headers()
         self._write(data)
 
@@ -109,12 +121,20 @@ class CanvasHandler(BaseHTTPRequestHandler):
             if not canvas.is_file():
                 self._json({"error": "canvas_missing"}, 503)
                 return
-            self._bytes(canvas.read_bytes(), "text/html; charset=utf-8")
+            self._bytes(
+                canvas.read_bytes(),
+                "text/html; charset=utf-8",
+                extra_headers={"X-Frame-Options": "SAMEORIGIN"},
+            )
             return
         if path == "/canvas-legacy":
             legacy = app.static_dir / "canvas-legacy.html"
             if legacy.is_file():
-                self._bytes(legacy.read_bytes(), "text/html; charset=utf-8")
+                self._bytes(
+                    legacy.read_bytes(),
+                    "text/html; charset=utf-8",
+                    extra_headers={"X-Frame-Options": "SAMEORIGIN"},
+                )
                 return
             self.send_error(404)
             return
@@ -125,7 +145,12 @@ class CanvasHandler(BaseHTTPRequestHandler):
                 root = app.static_dir.resolve()
                 if target.is_file() and str(target).startswith(str(root)):
                     mime, _ = mimetypes.guess_type(str(target))
-                    self._bytes(target.read_bytes(), mime or "application/octet-stream")
+                    cache = "no-cache" if rel.endswith((".js", ".css", ".html")) else "public, max-age=3600"
+                    self._bytes(
+                        target.read_bytes(),
+                        mime or "application/octet-stream",
+                        cache_control=cache,
+                    )
                     return
             self.send_error(404)
             return

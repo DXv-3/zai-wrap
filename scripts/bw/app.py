@@ -56,6 +56,9 @@ class App:
                 grok.sync_to_build_events(self.watch, self.store.append_event)
 
     def save_file(self, rel: str, content: str) -> dict[str, Any]:
+        rel = (rel or "").strip()
+        if not rel:
+            return {"ok": False, "error": "empty_path"}
         if len(content) > MAX_SAVE_BYTES:
             return {"ok": False, "error": "too_large"}
         target = self.policy.safe_project_file(rel, must_exist=True) or self.policy.safe_new_file(rel)

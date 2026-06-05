@@ -13,17 +13,17 @@
     <div class="brand">Build <span>Watch</span></div>
     <span class="status ok" id="livePill"><span class="dot"></span> Live</span>
     <span class="status grok" id="grokPill" hidden>Grok</span>
-    <p class="project" id="projectName">Connecting…</p>
+    <p class="project" id="projectName" title="">Connecting…</p>
     <div class="url-bar">
-      <input type="text" id="previewUrl" placeholder="Preview URL or path/to/file.html" />
+      <input type="text" id="previewUrl" placeholder="Preview URL or path/to/file.html" spellcheck="false" />
       <button type="button" id="btnPreviewGo">Open</button>
-      <button type="button" id="btnPreviewRefresh" title="Refresh preview">↻</button>
+      <button type="button" id="btnPreviewRefresh" title="Refresh preview (⌘R)">↻</button>
     </div>
     <button type="button" class="primary" id="btnConnect">Connect Grok</button>
   </header>
 
   <div class="layout">
-    <aside class="stream">
+    <aside class="stream" aria-label="Build stream">
       <h2>Build stream</h2>
       <div class="stream-body" id="feedList">
         <p class="empty">Grok edits and events show up here…</p>
@@ -31,22 +31,23 @@
     </aside>
 
     <main class="canvas">
-      <nav class="canvas-tabs">
-        <button type="button" class="tab active" data-mode="preview">Preview</button>
-        <button type="button" class="tab" data-mode="code">Code</button>
-        <button type="button" class="tab" data-mode="build">Build</button>
+      <nav class="canvas-tabs" role="tablist" aria-label="Canvas views">
+        <button type="button" class="tab active" data-mode="preview" role="tab" aria-selected="true">Preview</button>
+        <button type="button" class="tab" data-mode="code" role="tab" aria-selected="false">Code</button>
+        <button type="button" class="tab" data-mode="build" role="tab" aria-selected="false">Build</button>
       </nav>
 
       <div class="stage">
-        <div class="pane active" id="panePreview">
-          <iframe id="previewFrame" title="Live app preview"></iframe>
+        <div class="pane active" id="panePreview" role="tabpanel">
+          <div class="preview-loading" id="previewLoading" hidden>Loading preview…</div>
+          <iframe id="previewFrame" title="Live app preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
           <div class="empty-state" id="previewEmpty">
             <strong>Your app builds here</strong>
             <p>Run a dev server in Grok, or open an HTML file from the stream or sidebar.</p>
           </div>
         </div>
 
-        <div class="pane" id="paneCode" hidden>
+        <div class="pane" id="paneCode" role="tabpanel" hidden>
           <div class="code-bar">
             <span id="codePathLabel">No file open</span>
             <button type="button" id="btnCodeToPreview">Show in preview</button>
@@ -54,21 +55,21 @@
           <pre class="code-view" id="codeView">// Click a file in the build stream</pre>
         </div>
 
-        <div class="pane" id="paneBuild" hidden>
+        <div class="pane" id="paneBuild" role="tabpanel" hidden>
           <div class="build-bar">
-            <input type="text" id="buildPath" placeholder="path/to/file.html" />
-            <button type="button" id="btnBuildSave">Save</button>
+            <input type="text" id="buildPath" placeholder="path/to/file.html" spellcheck="false" />
+            <button type="button" id="btnBuildSave" title="Save (⌘S)">Save</button>
             <button type="button" id="btnBuildReload">Reload</button>
           </div>
           <div class="build-split">
             <textarea id="buildEditor" spellcheck="false" placeholder="Edit source…"></textarea>
-            <iframe id="buildFrame" title="Build preview"></iframe>
+            <iframe id="buildFrame" title="Build preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
           </div>
         </div>
       </div>
     </main>
 
-    <aside class="rail">
+    <aside class="rail" aria-label="Artifacts">
       <h2>Artifacts</h2>
       <div class="rail-list" id="filesList">
         <p class="empty">Previews from your project</p>
@@ -81,16 +82,18 @@
       <button type="button" class="term-toggle" id="btnTermToggle" aria-expanded="true">Terminal</button>
       <button type="button" class="seg active" id="btnMirror">Mirror</button>
       <button type="button" class="seg" id="btnShell">Shell</button>
-      <select id="termPick"></select>
+      <select id="termPick" aria-label="Terminal session"></select>
       <label class="sync-label"><input type="checkbox" id="autoSync" checked /> Auto-sync</label>
     </div>
     <div class="term-body" id="termBody">
-      <pre class="term-out" id="termOutput">Grok Build terminal mirrors here…</pre>
+      <pre class="term-out" id="termOutput" aria-live="polite">Grok Build terminal mirrors here…</pre>
       <div class="term-in">
-        <input type="text" id="termInput" placeholder="Shell input…" disabled />
+        <input type="text" id="termInput" placeholder="Shell input…" disabled autocomplete="off" />
       </div>
     </div>
   </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="/assets/hub.js"></script>
 </body>
