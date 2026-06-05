@@ -111,6 +111,24 @@ class CanvasHandler(BaseHTTPRequestHandler):
                 return
             self._bytes(canvas.read_bytes(), "text/html; charset=utf-8")
             return
+        if path == "/canvas-legacy":
+            legacy = app.static_dir / "canvas-legacy.html"
+            if legacy.is_file():
+                self._bytes(legacy.read_bytes(), "text/html; charset=utf-8")
+                return
+            self.send_error(404)
+            return
+        if path.startswith("/assets/"):
+            rel = unquote(path[len("/assets/") :]).lstrip("/")
+            if rel and ".." not in rel.split("/"):
+                target = (app.static_dir / rel).resolve()
+                root = app.static_dir.resolve()
+                if target.is_file() and str(target).startswith(str(root)):
+                    mime, _ = mimetypes.guess_type(str(target))
+                    self._bytes(target.read_bytes(), mime or "application/octet-stream")
+                    return
+            self.send_error(404)
+            return
 
         routes: dict[str, Callable[[], None]] = {
             "/api/health": lambda: self._json(app.preflight(require_port=False)),
