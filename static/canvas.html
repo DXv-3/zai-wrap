@@ -13,6 +13,11 @@
     <div class="brand">Build <span>Watch</span></div>
     <p class="project" id="projectName" title="">Connecting…</p>
     <button type="button" class="ghost" id="btnHelp">How it works</button>
+    <button type="button" class="ghost" id="btnCopyUrl" title="Bookmark this page">Copy link</button>
+    <label class="session-pick-wrap">
+      <span class="sr-only">Grok tab</span>
+      <select id="sessionPick" title="Which Grok terminal tab to follow"></select>
+    </label>
     <button type="button" class="primary" id="btnConnect">Link Grok</button>
   </header>
 
@@ -37,7 +42,7 @@
           <p class="guide-lead">You still build in <strong>Grok Build</strong> (your normal terminal). This page mirrors the result.</p>
           <ol class="steps">
             <li id="step1"><span>1</span> Keep Grok Build open in another window — that’s where you chat and run commands.</li>
-            <li id="step2"><span>2</span> Click <strong>Link Grok</strong> (top right) so this page can follow that session.</li>
+            <li id="step2"><span>2</span> Pick your <strong>Grok tab</strong> in the dropdown, then click <strong>Link Grok</strong>.</li>
             <li id="step3"><span>3</span> When Grok starts your app (<code>npm run dev</code>, etc.), the preview appears here automatically.</li>
           </ol>
           <p class="guide-note">Side panels are optional: <em>What Grok did</em> = live log of edits · <em>Open a file</em> = jump to HTML or docs.</p>
@@ -94,7 +99,14 @@
         <dt>Terminal at the bottom</dt>
         <dd>Optional mirror of Grok’s terminal. You don’t type here unless you expand it and switch modes — coding stays in Grok.</dd>
       </dl>
-      <p class="help-cmd">Start from your project folder: <code>cd your-project && build-watch on</code></p>
+      <h3 class="help-sub">Use in any tab</h3>
+      <ul class="help-steps">
+        <li><strong>Browser:</strong> Keep <code>http://127.0.0.1:8790</code> open in any tab (pin it). Use <em>Copy link</em> in the header.</li>
+        <li><strong>Grok terminal:</strong> You can have several Grok tabs. Use the <em>Grok tab</em> dropdown to choose which one Build Watch follows, then Link Grok.</li>
+        <li><strong>CLI:</strong> From your project: <code>build-watch on</code> then <code>build-watch connect</code> or <code>build-watch connect &lt;session-id&gt;</code></li>
+        <li><strong>Deep link:</strong> <code>?session=YOUR_SESSION_ID</code> on the URL auto-links when the page loads.</li>
+      </ul>
+      <p class="help-cmd">Always start the server from your project: <code>cd your-project && build-watch on</code></p>
     </div>
   </dialog>
 

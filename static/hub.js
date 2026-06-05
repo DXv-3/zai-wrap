@@ -29,8 +29,9 @@
   let fileEditMode = false;
   let grokActsCache = [];
   let toastTimer = null;
+  let selectedSession = "";
 
-  function toast(msg, kind = "info") {
+  function toast(msg, kind = "info", ms = 3500) {
     const el = $("toast");
     el.textContent = msg;
     el.className = "toast show " + (kind || "");
@@ -39,7 +40,7 @@
     toastTimer = setTimeout(() => {
       el.classList.remove("show");
       el.hidden = true;
-    }, 3500);
+    }, ms);
   }
 
   async function api(path, opts = {}) {
@@ -102,20 +103,48 @@
       return;
     }
     if (!g.connected) {
+      const n = (g.linkable_sessions || []).length;
       el.textContent =
-        "Not linked yet → Open Grok Build in another window, then click Link Grok (top right).";
+        n > 0
+          ? `Pick a Grok tab (${n} open) in the dropdown, then click Link Grok. Keep coding in that Grok window.`
+          : "Open Grok Build in any terminal tab first, then come back and Link Grok.";
       el.className = "status-line warn";
       return;
     }
-    if (!hasPreview) {
-      const proj = state.project_name || "your project";
-      el.textContent =
-        `Grok is linked ✓ No app preview yet — in Grok run npm run dev for ${proj}, or click Open a file. (Start Build Watch from your project folder: cd ${proj} && build-watch on)`;
-      el.className = "status-line warn";
+    const tab = (g.linkable_sessions || []).find((s) => s.session_id === g.session_id);
+    const tabLabel = tab ? tab.cwd_short || "tab" : "session";
+    if (hasPreview) {
+      el.textContent = `Watching your app · linked to Grok tab “${tabLabel}” · ${state.project_name || ""}`;
+    } else {
+      el.textContent = `Linked to Grok tab “${tabLabel}” — run your app there (npm run dev), or use Open a file.`;
+    }
+    el.className = hasPreview ? "status-line ok" : "status-line warn";
+  }
+
+  function renderSessionPicker(g) {
+    const sel = $("sessionPick");
+    if (!sel) return;
+    const sessions = g?.linkable_sessions || [];
+    const cur = g?.session_id || selectedSession || "";
+    if (!sessions.length) {
+      sel.innerHTML = '<option value="">No Grok tabs found</option>';
+      sel.disabled = true;
       return;
     }
-    el.textContent = `Watching your app · Grok linked · project ${state.project_name || ""}`;
-    el.className = "status-line ok";
+    sel.disabled = false;
+    sel.innerHTML = sessions
+      .map((s) => {
+        const star = s.matches_project ? "★ " : "";
+        const label = `${star}${s.cwd_short || "tab"} · ${(s.session_id || "").slice(0, 8)}`;
+        return `<option value="${esc(s.session_id)}"${s.session_id === cur ? " selected" : ""}>${esc(label)}</option>`;
+      })
+      .join("");
+    if (cur) sel.value = cur;
+    else {
+      const best = sessions.find((s) => s.matches_project) || sessions[0];
+      if (best) sel.value = best.session_id;
+    }
+    selectedSession = sel.value;
   }
 
   function updateGuide() {
@@ -310,12 +339,27 @@
       $("projectName").title = state.project || "";
 
       const g = state.grok || {};
+      renderSessionPicker(g);
       const btn = $("btnConnect");
-      btn.disabled = !!g.connected;
-      btn.textContent = g.connected ? "Grok linked ✓" : "Link Grok";
+      btn.disabled = false;
+      btn.textContent = g.connected ? "Re-link Grok" : "Link Grok";
 
       renderFeed(state.events, state.grok_activity);
       renderFiles(state.previews);
+
+      if (!userPreviewLocked) {
+        const latestHtml = [...(state.grok_activity || [])]
+          .reverse()
+          .find((a) => a.path && /\.html?$/i.test(a.path));
+        if (latestHtml?.path && g.connected) {
+          const p = relPath(latestHtml.path);
+          const url = "/api/raw?path=" + encodeURIComponent(p);
+          if (previewOrigin($("previewUrl").value) !== previewOrigin(url)) {
+            $("previewUrl").value = url;
+            syncPreview(true);
+          }
+        }
+      }
 
       const primary = state.primary_preview;
       if (!primarySet && primary && !isSelfUrl(primary)) {
@@ -354,30 +398,57 @@
     }
   }
 
-  async function connectGrok() {
+  async function connectGrok(sessionId) {
+    const sid = sessionId || $("sessionPick")?.value || selectedSession || "";
     $("btnConnect").disabled = true;
     try {
       const r = await fetch("/api/grok/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify(sid ? { session_id: sid } : {}),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok && d.ok !== true) throw new Error(d.error || "connect failed");
+      if (!r.ok && d.ok !== true) {
+        const hint =
+          d.error === "no_session_id"
+            ? "Open Grok Build in a terminal tab first"
+            : d.error === "updates_not_found"
+              ? "That tab has no session log yet — try another tab in the dropdown"
+              : d.error || "connect failed";
+        throw new Error(hint);
+      }
       userPreviewLocked = false;
       primarySet = false;
+      selectedSession = d.session_id || sid;
+      if (selectedSession) {
+        const u = new URL(location.href);
+        u.searchParams.set("session", selectedSession);
+        history.replaceState(null, "", u.pathname + u.search);
+      }
       await tick();
-      toast("Linked to Grok — keep building there; watch the preview here", "ok");
+      toast("Linked — keep coding in that Grok tab; preview updates here", "ok");
     } catch (err) {
-      toast("Link failed: " + err.message + " — is Grok Build running?", "error");
+      toast(String(err.message || err), "error");
     } finally {
-      $("btnConnect").disabled = !!state?.grok?.connected;
-      $("btnConnect").textContent = state?.grok?.connected ? "Grok linked ✓" : "Link Grok";
+      $("btnConnect").disabled = false;
+      $("btnConnect").textContent = state?.grok?.connected ? "Re-link Grok" : "Link Grok";
     }
   }
 
   function init() {
-    $("btnConnect").addEventListener("click", connectGrok);
+    $("btnConnect").addEventListener("click", () => connectGrok());
+    $("sessionPick")?.addEventListener("change", (e) => {
+      selectedSession = e.target.value;
+    });
+    $("btnCopyUrl").addEventListener("click", async () => {
+      const u = location.href.split("#")[0];
+      try {
+        await navigator.clipboard.writeText(u);
+        toast("Link copied — paste in any browser tab", "ok");
+      } catch {
+        toast(u, "info", 6000);
+      }
+    });
     $("btnHelp").addEventListener("click", () => $("helpDialog").showModal());
     $("helpClose").addEventListener("click", () => $("helpDialog").close());
     $("btnDismissGuide").addEventListener("click", () => {
@@ -459,13 +530,13 @@
     });
     $("btnFileSave").addEventListener("click", saveFileDialog);
 
-    fetch("/api/grok/connect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    }).catch(() => {});
-
-    tick();
+    const urlSid = new URLSearchParams(location.search).get("session");
+    tick().then(() => {
+      if (urlSid) connectGrok(urlSid);
+      else if (!state?.grok?.connected && (state?.grok?.linkable_sessions || []).length) {
+        connectGrok();
+      }
+    });
     pollTimer = setInterval(tick, POLL_MS);
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) tick();

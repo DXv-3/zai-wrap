@@ -162,7 +162,9 @@ class CanvasHandler(BaseHTTPRequestHandler):
             "/api/events": lambda: self._json({"events": app.store.load_events()}),
             "/api/settings": lambda: self._json(app.store.load_settings()),
             "/api/tts/status": lambda: self._json({"playing": tts.tts_status()}),
-            "/api/grok/status": lambda: self._grok_json(lambda: grok.grok_status(app.watch)),
+            "/api/grok/status": lambda: self._grok_json(
+                lambda: grok.grok_status(app.watch, app.policy.project)
+            ),
             "/api/grok/sessions": lambda: self._grok_json(lambda: {"sessions": grok.load_active_sessions()}),
             "/api/grok/voices": lambda: self._json({
                 "siri_voice_2_available": tts.siri_available(),

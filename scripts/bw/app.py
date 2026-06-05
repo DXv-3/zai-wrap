@@ -82,7 +82,7 @@ class App:
         grok_acts: list[dict[str, Any]] = []
         turns: list[dict[str, Any]] = []
         if not self.load_error:
-            grok_status = grok.grok_status(self.watch)
+            grok_status = grok.grok_status(self.watch, self.policy.project)
             grok_acts = grok.load_activities(self.watch, 80)
             turns = grok.load_turns(self.watch, 80)
         return {
@@ -110,15 +110,22 @@ class App:
     def bootstrap_grok(self, session_id: str | None = None) -> dict[str, Any]:
         from bw.security import sanitize_session_id
 
-        sid = sanitize_session_id(session_id or "") or grok.resolve_session_id(self.watch)
+        sid = sanitize_session_id(session_id or "") or grok.resolve_session_id(
+            self.watch, self.policy.project
+        )
         if not sid:
-            return {"ok": False, "error": "no session_id"}
+            return {"ok": False, "error": "no session_id", "linkable": grok.list_linkable_sessions(self.policy.project)}
         updates = grok.find_updates_path(sid)
         if not updates or not updates.is_file():
-            return {"ok": False, "error": "updates_not_found", "session_id": sid}
+            return {
+                "ok": False,
+                "error": "updates_not_found",
+                "session_id": sid,
+                "linkable": grok.list_linkable_sessions(self.policy.project),
+            }
         with self._grok_lock:
             n = grok.bootstrap_session(self.watch, sid)
-        status = grok.grok_status(self.watch)
+        status = grok.grok_status(self.watch, self.policy.project)
         return {
             "ok": bool(status.get("connected")),
             "session_id": sid,
@@ -131,7 +138,9 @@ class App:
 
         if self.load_error:
             return {"ok": False, "error": "grok_unavailable", "detail": self.load_error}
-        sid = sanitize_session_id(session_id or "") or grok.resolve_session_id(self.watch)
+        sid = sanitize_session_id(session_id or "") or grok.resolve_session_id(
+            self.watch, self.policy.project
+        )
         if not sid:
             return {"ok": False, "error": "no session_id"}
         with self._grok_lock:

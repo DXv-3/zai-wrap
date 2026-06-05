@@ -65,6 +65,27 @@ body {
   font-weight: 600;
 }
 .primary:disabled { opacity: 0.5; cursor: default; }
+.session-pick-wrap { flex-shrink: 0; }
+.session-pick-wrap select {
+  font: inherit;
+  font-size: 0.72rem;
+  max-width: 220px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
 
 .status-line {
   flex-shrink: 0;
@@ -385,6 +406,15 @@ body {
 .help-body dd { color: var(--muted); margin-top: 4px; margin-left: 0; }
 .help-cmd { margin-top: 14px; font-size: 0.78rem; color: var(--muted); }
 .help-cmd code { font-family: var(--mono); color: var(--text); }
+.help-sub { font-size: 0.9rem; margin-top: 16px; color: var(--accent); }
+.help-steps {
+  margin: 10px 0 0 18px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.help-steps li { margin-bottom: 8px; }
+.help-steps strong { color: var(--text); }
 
 .file-dialog pre {
   margin: 0;

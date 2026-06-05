@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from bw.security import sanitize_session_id
+from bw.paths import resolve_project
+from bw.security import is_path_under, sanitize_session_id
 from bw.storage import tail_jsonl
 
 GROK_HOME = Path.home() / ".grok"
@@ -45,22 +46,80 @@ def load_active_sessions() -> list[dict[str, Any]]:
         return []
 
 
-def resolve_session_id(watch_dir: Path) -> str | None:
+def session_matches_project(cwd: str, project: Path) -> bool:
+    if not cwd:
+        return False
+    try:
+        c = Path(cwd).expanduser().resolve()
+        p = project.resolve()
+        if c == p:
+            return True
+        if is_path_under(p, c) or is_path_under(c, p):
+            return True
+    except OSError:
+        return False
+    return False
+
+
+def _session_has_updates(session_id: str | None) -> bool:
+    sid = sanitize_session_id(session_id or "") or ""
+    if not sid:
+        return False
+    up = find_updates_path(sid)
+    return bool(up and up.is_file())
+
+
+def resolve_session_id(watch_dir: Path, project: Path | None = None) -> str | None:
+    proj = (project or resolve_project()).resolve()
     if sid := sanitize_session_id(os.environ.get("GROK_SESSION_ID")):
-        return sid
+        if _session_has_updates(sid):
+            return sid
     link = watch_dir / "grok_session.json"
     if link.is_file():
         try:
             data = json.loads(link.read_text(encoding="utf-8"))
-            return sanitize_session_id(str(data.get("session_id") or ""))
+            saved = sanitize_session_id(str(data.get("session_id") or ""))
+            if saved and _session_has_updates(saved):
+                return saved
         except json.JSONDecodeError:
             pass
     sessions = load_active_sessions()
     if not sessions:
         return None
-    # Most recently opened
-    sessions.sort(key=lambda s: s.get("opened_at", ""), reverse=True)
-    return sanitize_session_id(str(sessions[0].get("session_id") or ""))
+    ordered = sorted(sessions, key=lambda s: s.get("opened_at", ""), reverse=True)
+    for s in ordered:
+        if not session_matches_project(str(s.get("cwd") or ""), proj):
+            continue
+        sid = sanitize_session_id(str(s.get("session_id") or ""))
+        if sid and _session_has_updates(sid):
+            return sid
+    for s in ordered:
+        sid = sanitize_session_id(str(s.get("session_id") or ""))
+        if sid and _session_has_updates(sid):
+            return sid
+    return None
+
+
+def list_linkable_sessions(project: Path | None = None) -> list[dict[str, Any]]:
+    """Sessions Grok has open — for UI picker (any terminal tab)."""
+    proj = (project or resolve_project()).resolve()
+    out: list[dict[str, Any]] = []
+    for s in sorted(load_active_sessions(), key=lambda x: x.get("opened_at", ""), reverse=True):
+        sid = sanitize_session_id(str(s.get("session_id") or ""))
+        if not sid or not _session_has_updates(sid):
+            continue
+        cwd = str(s.get("cwd") or "")
+        out.append(
+            {
+                "session_id": sid,
+                "cwd": cwd,
+                "cwd_short": Path(cwd).name if cwd else "—",
+                "opened_at": s.get("opened_at"),
+                "matches_project": session_matches_project(cwd, proj),
+                "pid": s.get("pid"),
+            }
+        )
+    return out
 
 
 def save_session_link(watch_dir: Path, session_id: str) -> None:
@@ -533,15 +592,17 @@ def ingest_updates(watch_dir: Path, session_id: str | None = None) -> int:
     return ingested
 
 
-def grok_status(watch_dir: Path) -> dict[str, Any]:
-    sid = resolve_session_id(watch_dir)
+def grok_status(watch_dir: Path, project: Path | None = None) -> dict[str, Any]:
+    proj = project or resolve_project()
+    sid = resolve_session_id(watch_dir, proj)
     updates = find_updates_path(sid) if sid else None
-    sessions = load_active_sessions()
+    linkable = list_linkable_sessions(proj)
     return {
         "connected": bool(sid and updates and updates.is_file()),
         "session_id": sid,
         "updates_path": str(updates) if updates else None,
-        "active_sessions": sessions,
+        "active_sessions": load_active_sessions(),
+        "linkable_sessions": linkable,
         "activity_count": len(load_activities(watch_dir)),
         "turn_count": len(load_turns(watch_dir, 500)),
         "terminals_dir": str(Path.home() / ".grok" / "projects"),
