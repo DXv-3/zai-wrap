@@ -14,77 +14,83 @@
     <span class="status ok" id="livePill"><span class="dot"></span> Live</span>
     <span class="status grok" id="grokPill" hidden>Grok</span>
     <p class="project" id="projectName">Connecting…</p>
-    <div class="top-actions">
-      <button type="button" class="primary" id="btnConnect" title="Link Grok session">Connect Grok</button>
-      <button type="button" id="btnAdvanced">Advanced UI</button>
+    <div class="url-bar">
+      <input type="text" id="previewUrl" placeholder="Preview URL or path/to/file.html" />
+      <button type="button" id="btnPreviewGo">Open</button>
+      <button type="button" id="btnPreviewRefresh" title="Refresh preview">↻</button>
     </div>
+    <button type="button" class="primary" id="btnConnect">Connect Grok</button>
   </header>
 
-  <nav class="tabs" role="tablist">
-    <button type="button" class="tab active" data-tab="activity" role="tab">Activity</button>
-    <button type="button" class="tab" data-tab="preview" role="tab">Preview</button>
-    <button type="button" class="tab" data-tab="terminal" role="tab">Terminal</button>
-  </nav>
+  <div class="layout">
+    <aside class="stream">
+      <h2>Build stream</h2>
+      <div class="stream-body" id="feedList">
+        <p class="empty">Grok edits and events show up here…</p>
+      </div>
+    </aside>
 
-  <main class="content">
-    <section class="panel active" id="panelActivity" role="tabpanel">
-      <div class="activity-grid">
-        <div class="feed">
-          <h2>What’s happening</h2>
-          <div class="feed-list" id="feedList">
-            <p class="empty">Waiting for Grok Build…</p>
+    <main class="canvas">
+      <nav class="canvas-tabs">
+        <button type="button" class="tab active" data-mode="preview">Preview</button>
+        <button type="button" class="tab" data-mode="code">Code</button>
+        <button type="button" class="tab" data-mode="build">Build</button>
+      </nav>
+
+      <div class="stage">
+        <div class="pane active" id="panePreview">
+          <iframe id="previewFrame" title="Live app preview"></iframe>
+          <div class="empty-state" id="previewEmpty">
+            <strong>Your app builds here</strong>
+            <p>Run a dev server in Grok, or open an HTML file from the stream or sidebar.</p>
           </div>
         </div>
-        <div class="conversation">
-          <h2>Conversation</h2>
-          <div class="turns" id="turnsList">
-            <p class="empty">Turns appear when Grok is connected.</p>
+
+        <div class="pane" id="paneCode" hidden>
+          <div class="code-bar">
+            <span id="codePathLabel">No file open</span>
+            <button type="button" id="btnCodeToPreview">Show in preview</button>
+          </div>
+          <pre class="code-view" id="codeView">// Click a file in the build stream</pre>
+        </div>
+
+        <div class="pane" id="paneBuild" hidden>
+          <div class="build-bar">
+            <input type="text" id="buildPath" placeholder="path/to/file.html" />
+            <button type="button" id="btnBuildSave">Save</button>
+            <button type="button" id="btnBuildReload">Reload</button>
+          </div>
+          <div class="build-split">
+            <textarea id="buildEditor" spellcheck="false" placeholder="Edit source…"></textarea>
+            <iframe id="buildFrame" title="Build preview"></iframe>
           </div>
         </div>
       </div>
-    </section>
+    </main>
 
-    <section class="panel" id="panelPreview" role="tabpanel" hidden>
-      <div class="preview-bar">
-        <input type="url" id="previewUrl" placeholder="Preview URL" />
-        <button type="button" id="btnPreviewGo">Open</button>
-        <button type="button" id="btnPreviewRefresh">Refresh</button>
+    <aside class="rail">
+      <h2>Artifacts</h2>
+      <div class="rail-list" id="filesList">
+        <p class="empty">Previews from your project</p>
       </div>
-      <div class="preview-frame-wrap">
-        <iframe id="previewFrame" title="Live preview"></iframe>
-        <div class="preview-empty" id="previewEmpty">
-          <strong>No preview yet</strong>
-          <p>Start a dev server in your project, or pick a file from Activity.</p>
-        </div>
-      </div>
-      <aside class="files-rail">
-        <h3>Files & previews</h3>
-        <div id="filesList"></div>
-      </aside>
-    </section>
+    </aside>
+  </div>
 
-    <section class="panel" id="panelTerminal" role="tabpanel" hidden>
-      <div class="term-toolbar">
-        <button type="button" class="seg active" id="btnMirror">Mirror output</button>
-        <button type="button" class="seg" id="btnShell">Interactive shell</button>
-        <select id="termPick" title="Terminal session"></select>
-        <label class="sync-label"><input type="checkbox" id="autoSync" checked /> Auto-sync</label>
-      </div>
-      <pre class="term-out" id="termOutput">Terminal output appears here…</pre>
+  <footer class="terminal" id="terminalDock">
+    <div class="term-head">
+      <button type="button" class="term-toggle" id="btnTermToggle" aria-expanded="true">Terminal</button>
+      <button type="button" class="seg active" id="btnMirror">Mirror</button>
+      <button type="button" class="seg" id="btnShell">Shell</button>
+      <select id="termPick"></select>
+      <label class="sync-label"><input type="checkbox" id="autoSync" checked /> Auto-sync</label>
+    </div>
+    <div class="term-body" id="termBody">
+      <pre class="term-out" id="termOutput">Grok Build terminal mirrors here…</pre>
       <div class="term-in">
-        <input type="text" id="termInput" placeholder="Type a command (shell mode)…" autocomplete="off" disabled />
+        <input type="text" id="termInput" placeholder="Shell input…" disabled />
       </div>
-      <p class="hint" id="termHint">Mirrors your Grok Build terminal. Switch to shell to type commands.</p>
-    </section>
-  </main>
-
-  <dialog class="file-modal" id="fileModal">
-    <header>
-      <span id="fileModalTitle">File</span>
-      <button type="button" id="fileModalClose" aria-label="Close">×</button>
-    </header>
-    <pre id="fileModalBody"></pre>
-  </dialog>
+    </div>
+  </footer>
 
   <script src="/assets/hub.js"></script>
 </body>
