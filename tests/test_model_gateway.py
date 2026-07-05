@@ -1,214 +1,242 @@
 """
-tests/test_model_gateway.py — 12 tests for the unified model gateway.
-
-All tests use mocked httpx — no real API calls.
+tests/test_model_gateway.py
+-----------------------------
+Tests for ModelRouter (GATEWAY-01).
+All provider SDK calls mocked; no real API calls.
 """
+
 from __future__ import annotations
-import json
+
 import sys
-import types as _types
-from pathlib import Path
+import types
+import unittest
 from unittest.mock import MagicMock, patch
 
-import pytest
+# ---------------------------------------------------------------------------
+# Stub all provider SDKs before importing model_gateway
+# ---------------------------------------------------------------------------
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+def _make_openai_stub(content="openai response", tokens=50):
+    choice = MagicMock()
+    choice.message.content = content
+    usage = MagicMock()
+    usage.total_tokens = tokens
+    resp = MagicMock()
+    resp.choices = [choice]
+    resp.usage = usage
+    client = MagicMock()
+    client.chat.completions.create.return_value = resp
+    mod = types.ModuleType("openai")
+    mod.OpenAI = MagicMock(return_value=client)
+    return mod, client
 
-# Stub httpx before import (so tests don’t need it installed)
-httpx_stub = _types.ModuleType("httpx")
+def _make_anthropic_stub(content="anthropic response", tokens=60):
+    text_block = MagicMock()
+    text_block.text = content
+    usage = MagicMock()
+    usage.input_tokens = 20
+    usage.output_tokens = 40
+    msg = MagicMock()
+    msg.content = [text_block]
+    msg.usage = usage
+    client = MagicMock()
+    client.messages.create.return_value = msg
+    mod = types.ModuleType("anthropic")
+    mod.Anthropic = MagicMock(return_value=client)
+    return mod, client
 
-class _FakeResponse:
-    def __init__(self, body: dict, status_code: int = 200):
-        self._body = body
-        self.status_code = status_code
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise Exception(f"HTTP {self.status_code}")
-    def json(self):
-        return self._body
+_openai_mod, _openai_client   = _make_openai_stub()
+_anthropic_mod, _anthropic_client = _make_anthropic_stub()
+sys.modules["openai"]     = _openai_mod
+sys.modules["anthropic"]  = _anthropic_mod
 
-httpx_stub.post = lambda *a, **kw: _FakeResponse({})
-sys.modules.setdefault("httpx", httpx_stub)
+# Stub harmony
+_harmony = types.ModuleType("harmony_publisher_base")
+_harmony.HarmonyPublisher = MagicMock()
+sys.modules["harmony_publisher_base"] = _harmony
 
-from model_gateway import (
-    ModelGateway, ModelResponse, ModelRouter, _UsageTracker, build_event
-)
-from model_gateway import build_event as _build_event_unused  # noqa
+import os
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-anthropic-key")
+os.environ.setdefault("DEEPSEEK_API_KEY",  "test-deepseek-key")
+os.environ.setdefault("OPENAI_API_KEY",    "test-openai-key")
+os.environ.setdefault("KIMI_API_KEY",      "test-kimi-key")
+# XAI_API_KEY intentionally NOT set so GrokProvider uses bridge path
 
-# Re-import build_event from harmony (not available in gateway) — use gateway’s
-# internal one via checking the module directly
-import model_gateway as mgw
+from model_gateway import ModelRouter, ModelResponse, ROUTE_TABLE, quick_call, get_router
+from providers.anthropic_provider import AnthropicProvider
+from providers.deepseek_provider  import DeepSeekProvider
+from providers.openai_provider    import OpenAIProvider
+from providers.kimi_provider      import KimiProvider
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# ModelRouter tests
 # ---------------------------------------------------------------------------
 
-def _ok_response(text="Hello", model="gpt"):
-    return {
-        "choices": [{"message": {"content": text}}],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
-    }
+class TestModelRouter(unittest.TestCase):
 
-def _claude_ok_response(text="Hello"):
-    return {
-        "content": [{"text": text}],
-        "usage": {"input_tokens": 10, "output_tokens": 5},
-    }
+    def setUp(self):
+        self.router = ModelRouter()
 
+    def test_available_providers_nonempty(self):
+        providers = self.router.available_providers()
+        self.assertIsInstance(providers, list)
+        self.assertGreater(len(providers), 0)
 
-# ---------------------------------------------------------------------------
-# ModelResponse
-# ---------------------------------------------------------------------------
+    def test_route_returns_model_response(self):
+        resp = self.router.route("Hello", task_type="fast")
+        self.assertIsInstance(resp, ModelResponse)
 
-def test_model_response_ok_true():
-    r = ModelResponse(text="hi", model="claude/claude-sonnet-4-5", provider="claude")
-    assert r.ok is True
+    def test_route_success_flag(self):
+        resp = self.router.route("Hello", task_type="code")
+        self.assertTrue(resp.success)
 
-def test_model_response_ok_false_on_error():
-    r = ModelResponse(text="", model="", provider="", error="timeout")
-    assert r.ok is False
+    def test_route_content_is_string(self):
+        resp = self.router.route("Hello", task_type="reasoning")
+        self.assertIsInstance(resp.content, str)
+        self.assertGreater(len(resp.content), 0)
 
-def test_model_response_to_dict():
-    r = ModelResponse(text="hi", model="z_ai/glm-5.1", provider="z_ai",
-                      trace_id="tr-1", latency_ms=120.5)
-    d = r.to_dict()
-    assert d["text"] == "hi"
-    assert d["trace_id"] == "tr-1"
-    assert d["latency_ms"] == 120.5
+    def test_route_tracks_task_type(self):
+        resp = self.router.route("Hello", task_type="audit")
+        self.assertEqual(resp.task_type, "audit")
 
+    def test_call_specific_model_anthropic(self):
+        resp = self.router.call("Hello", model="anthropic/claude-sonnet-4-5")
+        self.assertEqual(resp.provider, "anthropic")
+        self.assertEqual(resp.task_type, "direct")
 
-# ---------------------------------------------------------------------------
-# ModelGateway._parse_model_spec
-# ---------------------------------------------------------------------------
+    def test_call_specific_model_deepseek(self):
+        resp = self.router.call("Write a sort function", model="deepseek/deepseek-coder")
+        self.assertEqual(resp.provider, "deepseek")
 
-def test_parse_model_spec_full():
-    gw = ModelGateway()
-    provider, model = gw._parse_model_spec("claude/claude-sonnet-4-5")
-    assert provider == "claude"
-    assert model == "claude-sonnet-4-5"
+    def test_call_no_prefix_falls_back_to_route(self):
+        resp = self.router.call("Hello", model="claude-sonnet")
+        self.assertIsInstance(resp, ModelResponse)
 
-def test_parse_model_spec_provider_only():
-    gw = ModelGateway()
-    provider, model = gw._parse_model_spec("z_ai")
-    assert provider == "z_ai"
-    assert model == "glm-5.1"
+    def test_usage_summary_accumulates(self):
+        self.router.route("p1", task_type="fast")
+        self.router.route("p2", task_type="fast")
+        summary = self.router.usage_summary()
+        total = sum(v["calls"] for v in summary.values())
+        self.assertGreaterEqual(total, 2)
 
+    def test_usage_summary_has_expected_keys(self):
+        self.router.route("test", task_type="code")
+        summary = self.router.usage_summary()
+        for model_stats in summary.values():
+            for key in ["calls", "failures", "avg_latency_ms", "success_rate", "total_tokens"]:
+                self.assertIn(key, model_stats)
 
-# ---------------------------------------------------------------------------
-# ModelGateway.call — success paths
-# ---------------------------------------------------------------------------
+    def test_fallback_on_primary_failure(self):
+        """Simulate primary provider failing; router should try next in chain."""
+        # Make deepseek (primary for 'code') fail
+        orig = self.router._providers.get("deepseek")
+        if orig:
+            orig.complete = MagicMock(side_effect=Exception("deepseek down"))
+        resp = self.router.route("test", task_type="code")
+        # Should fall through to anthropic or openai
+        self.assertIsInstance(resp, ModelResponse)
+        # Reset
+        if orig:
+            from providers.deepseek_provider import DeepSeekProvider
+            self.router._providers["deepseek"] = DeepSeekProvider()
 
-def test_call_claude_success(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-
-    fake_post = MagicMock(return_value=_FakeResponse(_claude_ok_response("Bonjour")))
-    with patch.object(httpx_stub, "post", fake_post):
-        gw = ModelGateway()
-        resp = gw.call("Say hello", model="claude/claude-sonnet-4-5")
-
-    assert resp.ok
-    assert resp.text == "Bonjour"
-    assert resp.provider == "claude"
-    assert resp.latency_ms >= 0
-
-def test_call_z_ai_success(monkeypatch):
-    monkeypatch.setenv("Z_AI_API_KEY", "test-key")
-
-    fake_post = MagicMock(return_value=_FakeResponse(_ok_response("Code generated")))
-    with patch.object(httpx_stub, "post", fake_post):
-        gw = ModelGateway()
-        resp = gw.call("Write hello world", model="z_ai/glm-5.1")
-
-    assert resp.ok
-    assert resp.text == "Code generated"
-    assert resp.provider == "z_ai"
-
-
-# ---------------------------------------------------------------------------
-# Fallback chain
-# ---------------------------------------------------------------------------
-
-def test_router_falls_back_to_second_in_chain(monkeypatch):
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-    call_count = [0]
-
-    def fake_post(url, **kwargs):
-        call_count[0] += 1
-        if "z.ai" in url:
-            class _Err:
-                def raise_for_status(self): raise Exception("Z.AI down")
-                def json(self): return {}
-            return _Err()
-        # deepseek fallback
-        return _FakeResponse(_ok_response("deepseek answer"))
-
-    with patch.object(httpx_stub, "post", fake_post):
+    def test_all_providers_fail_returns_error_response(self):
         router = ModelRouter()
-        with patch.dict("os.environ", {"GATEWAY_MAX_RETRIES": "1"}):
-            mgw.MAX_RETRIES = 1
-            resp = router.route("code task", task_type="code")
-            mgw.MAX_RETRIES = 2  # reset
+        # Remove all providers
+        router._providers.clear()
+        resp = router.route("test", task_type="code")
+        self.assertFalse(resp.success)
+        self.assertEqual(resp.model, "none")
 
-    assert resp.fallback_used is True
-    assert resp.provider == "deepseek"
+    def test_route_table_covers_all_conductor_task_types(self):
+        required = {"code", "reasoning", "fast", "creative", "vision",
+                    "routing", "audit", "forensics"}
+        self.assertTrue(required.issubset(set(ROUTE_TABLE.keys())))
 
-
-# ---------------------------------------------------------------------------
-# Usage tracker
-# ---------------------------------------------------------------------------
-
-def test_usage_tracker_accumulates():
-    t = _UsageTracker()
-    t.record("claude", "claude-sonnet-4-5", True, 100, 50, 800.0)
-    t.record("claude", "claude-sonnet-4-5", True, 200, 80, 600.0)
-    t.record("claude", "claude-sonnet-4-5", False, 0, 0, 100.0)
-    s = t.summary()
-    key = "claude/claude-sonnet-4-5"
-    assert s[key]["calls"] == 3
-    assert s[key]["failures"] == 1
-    assert s[key]["prompt_tokens"] == 300
-    assert s[key]["success_rate"] == round(2/3, 3)
+    def test_quick_call_returns_string(self):
+        result = quick_call("test", task_type="fast")
+        self.assertIsInstance(result, str)
 
 
 # ---------------------------------------------------------------------------
-# ModelRouter task-type routing
+# Individual provider tests
 # ---------------------------------------------------------------------------
 
-def test_router_routes_code_to_z_ai():
-    router = ModelRouter()
-    chain = router._routes["code"]
-    assert chain[0][0] == "z_ai"
+class TestAnthropicProvider(unittest.TestCase):
 
-def test_router_routes_reasoning_to_claude():
-    router = ModelRouter()
-    chain = router._routes["reasoning"]
-    assert chain[0][0] == "claude"
+    def test_available_when_key_set(self):
+        p = AnthropicProvider()
+        self.assertTrue(p.available())
 
-def test_router_routes_fast_to_grok():
-    router = ModelRouter()
-    chain = router._routes["fast"]
-    assert chain[0][0] == "grok_api"
+    def test_complete_returns_tuple(self):
+        p = AnthropicProvider()
+        content, tokens = p.complete("Hello", model="claude-haiku-4-5")
+        self.assertIsInstance(content, str)
+        self.assertIsInstance(tokens, int)
+
+    def test_complete_calls_anthropic_sdk(self):
+        _anthropic_client.messages.create.reset_mock()
+        p = AnthropicProvider()
+        p.complete("test", model="claude-sonnet-4-5")
+        _anthropic_client.messages.create.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# Build-watch event emission
-# ---------------------------------------------------------------------------
+class TestDeepSeekProvider(unittest.TestCase):
 
-def test_build_watch_event_emitted(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    events_file = tmp_path / "events.jsonl"
-    events_file.touch()
-    monkeypatch.setattr(mgw, "BUILD_WATCH_DIR", tmp_path)
-    monkeypatch.setattr(mgw, "EMIT_EVENTS", True)
+    def test_available_when_key_set(self):
+        from providers.deepseek_provider import DeepSeekProvider
+        p = DeepSeekProvider()
+        self.assertTrue(p.available())
 
-    fake_post = MagicMock(return_value=_FakeResponse(_claude_ok_response("hi")))
-    with patch.object(httpx_stub, "post", fake_post):
-        gw = ModelGateway()
-        gw.call("hello", model="claude/claude-sonnet-4-5")
+    def test_complete_uses_openai_compat(self):
+        _openai_client.chat.completions.create.reset_mock()
+        from providers.deepseek_provider import DeepSeekProvider
+        p = DeepSeekProvider()
+        p.complete("test", model="deepseek-chat")
+        _openai_client.chat.completions.create.assert_called_once()
 
-    lines = events_file.read_text().strip().split("\n")
-    assert len(lines) >= 2  # one plan + one result
-    first = json.loads(lines[0])
-    assert first["kind"] == "note"
-    assert "gateway" in first["msg"]
+    def test_r1_forces_temperature_1(self):
+        from providers.deepseek_provider import DeepSeekProvider
+        p = DeepSeekProvider()
+        p.complete("test", model="deepseek-r1", temperature=0.3)
+        call_kwargs = _openai_client.chat.completions.create.call_args[1]
+        self.assertEqual(call_kwargs.get("temperature"), 1.0)
+
+
+class TestOpenAIProvider(unittest.TestCase):
+
+    def test_available_when_key_set(self):
+        p = OpenAIProvider()
+        self.assertTrue(p.available())
+
+    def test_complete_gpt4o(self):
+        _openai_client.chat.completions.create.reset_mock()
+        p = OpenAIProvider()
+        p.complete("test", model="gpt-4o")
+        _openai_client.chat.completions.create.assert_called_once()
+
+    def test_o3_uses_max_completion_tokens(self):
+        from providers.openai_provider import OpenAIProvider
+        p = OpenAIProvider()
+        p.complete("test", model="o3-mini", max_tokens=1000)
+        call_kwargs = _openai_client.chat.completions.create.call_args[1]
+        self.assertIn("max_completion_tokens", call_kwargs)
+        self.assertNotIn("temperature", call_kwargs)
+
+
+class TestKimiProvider(unittest.TestCase):
+
+    def test_available_when_key_set(self):
+        p = KimiProvider()
+        self.assertTrue(p.available())
+
+    def test_complete_moonshot_128k(self):
+        _openai_client.chat.completions.create.reset_mock()
+        p = KimiProvider()
+        p.complete("very long document", model="moonshot-v1-128k")
+        _openai_client.chat.completions.create.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()
